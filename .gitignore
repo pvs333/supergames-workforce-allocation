@@ -1,1 +1,9 @@
-OpenEnv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+*.mov
+*.mp4
+validate-submission.sh
+openenv_supergames.egg-info/
