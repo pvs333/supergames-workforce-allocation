@@ -1,255 +1,207 @@
+
 ---
-title: Supergames Environment Server
-emoji: 🏹
-colorFrom: green
-colorTo: purple
+title: SuperGames Workforce Allocation
+emoji: 🎮
+colorFrom: red
+colorTo: yellow
 sdk: docker
 pinned: false
 app_port: 8000
-base_path: /web
 tags:
   - openenv
 ---
 
-# Supergames Environment
+# Supergames — Workforce Allocation Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+An OpenEnv-compliant reinforcement learning environment where an AI agent 
+allocates engineering staff across a fictional game studio portfolio to 
+maximise revenue.
+
+## Environment Overview
+
+Super Games is a fictional game studio with 4 titles:
+- **Super MMO** — high revenue, large playerbase
+- **Super Shooter** — competitive, churn-sensitive  
+- **Super Strategy** — high potential, growing
+- **Super Fighter** — smaller but loyal playerbase
+
+Each sprint the agent assigns staff to bugs and features across these titles.
+Unresolved critical bugs compound player churn every sprint. Features take 
+longer but unlock higher revenue ceilings.
+
+## Tasks
+
+| Task | Difficulty | Description |
+|------|-----------|-------------|
+| 1 | Easy | Single game, 1 sprint — precise budget allocation across 4 bugs |
+| 2 | Medium | 4 games, 3 sprints — balance bugs vs features |
+| 3 | Hard | Full portfolio, 5 sprints — cross-game churn management |
+| 4 | Hard | Crisis interrupt — emergency bug appears mid-episode |
+
+## Observation Space
+
+```json
+{
+  "taskID": 1,
+  "currentStep": 0,
+  "totalSteps": 1,
+  "games": [
+    {
+      "id": "mmo",
+      "title": "Super MMO",
+      "branch": "Bangalore",
+      "monthlyRevenue": 789600.0,
+      "churnRate": 0.05,
+      "churnMult": 1.0
+    }
+  ],
+  "workQueue": [
+    {
+      "id": "b1",
+      "workType": "bug",
+      "severity": 5,
+      "effort": 300,
+      "revenueImpact": 250.0,
+      "impactDelay": 0,
+      "daysWorked": 0,
+      "lastSprintStaff": 0,
+      "crisis": false
+    }
+  ],
+  "staffPool": {
+    "permanent": 67,
+    "contractors": 0,
+    "allocated": 0
+  },
+  "crisis": false,
+  "goal": "..."
+}
+```
+
+## Action Space
+
+```json
+{
+  "assignments": [
+    {"workItemID": "b1", "staff": 30},
+    {"workItemID": "b2", "staff": 20}
+  ]
+}
+```
+
+Rules:
+- Total staff across all assignments cannot exceed `staffPool.available`
+- Staff assigned per item must be ≥ 1
+- Multiple items can be assigned in one sprint
+
+## Reward
+
+Per-step reward is normalized sprint revenue against estimated optimal:
+
+```
+reward = sprint_revenue / (estimated_optimal / total_steps)
+```
+
+Final episode score uses a task-specific grader:
+- Tasks 1-3: `agent_revenue / optimal_revenue`
+- Task 4: revenue ratio × crisis resolution multiplier (0.25 penalty if crisis unresolved)
+
+All rewards are clamped to `[0.0, 1.0]`.
+
+## Simulation
+
+Each staff member contributes **10 staff-days** per sprint. A work item 
+completes when `daysWorked >= effort`.
+
+Revenue per sprint:
+```
+base = monthlyRevenue * (1 - churnRate * churnMult)
+total = base + sum(revenueImpact of completed items)
+```
+
+Churn multiplier increases by `0.15` per unresolved CRITICAL/BLOCKER bug 
+and decreases when bugs are fixed.
 
 ## Quick Start
 
-The simplest way to use the Supergames environment is through the `SupergamesEnv` class:
-
 ```python
-from supergames import SupergamesAction, SupergamesEnv
+from supergames.server.environment import SupergamesEnvironment
+from models import SupergamesAction, Assignment
 
-try:
-    # Create environment from Docker image
-    supergamesenv = SupergamesEnv.from_docker_image("supergames-env:latest")
+env = SupergamesEnvironment()
+obs = env.reset(task_id=1, seed=42)
 
-    # Reset
-    result = supergamesenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+action = SupergamesAction(assignments=[
+    Assignment(workItemID="b1", staff=30),
+    Assignment(workItemID="b4", staff=18),
+])
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = supergamesenv.step(SupergamesAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    supergamesenv.close()
+result = env.step(action)
+print(result.reward)
 ```
 
-That's it! The `SupergamesEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
-
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
+## Running Locally
 
 ```bash
-# From project root
-docker build -t supergames-env:latest -f server/Dockerfile .
+# Install dependencies
+pip install -e .
+
+# Start server
+python -m server.app
+
+# Test health
+curl http://localhost:8000/health
 ```
 
-## Deploying to Hugging Face Spaces
+## API Endpoints
 
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/reset` | POST | Start new episode |
+| `/step` | POST | Execute one sprint |
+| `/state` | GET | Current environment state |
+| `/docs` | GET | Interactive API docs |
+
+## Inference
 
 ```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
+export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=meta-llama/Llama-3.3-70B-Instruct
+export HF_TOKEN=your_token_here
+export ENV_BASE_URL=http://localhost:8000
 
-# Or specify options
-openenv push --namespace my-org --private
+python inference.py
 ```
 
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
+## Baseline Results
 
-### Prerequisites
+Scores using `meta-llama/Llama-3.3-70B-Instruct`:
 
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
+| Task | Score | Notes |
+|------|-------|-------|
+| 1 | 0.08 | Requires precise arithmetic — hardest for LLM |
+| 2 | 0.94 | Greedy heuristic works well |
+| 3 | 0.95 | Multi-sprint strategy near optimal |
+| 4 | 0.95 | Crisis prioritisation learned correctly |
 
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**SupergamesAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**SupergamesObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Supergames environment server running, you can connect directly:
-
-```python
-from supergames import SupergamesEnv
-
-# Connect to existing server
-supergamesenv = SupergamesEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = supergamesenv.reset()
-result = supergamesenv.step(SupergamesAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `supergamesenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from supergames import SupergamesAction, SupergamesEnv
-
-# Connect with context manager (auto-connects and closes)
-with SupergamesEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(SupergamesAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    SupergamesEnvironment,  # Pass class, not instance
-    SupergamesAction,
-    SupergamesObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from supergames import SupergamesAction, SupergamesEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with SupergamesEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(SupergamesAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/supergames_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
+Task 1 being the hardest for LLM agents despite being "easy" reveals an 
+interesting insight — single sprint budget optimisation requires precise 
+numerical reasoning that LLMs struggle with, while multi-sprint strategic 
+allocation rewards heuristic thinking that LLMs handle well.
 
 ## Project Structure
 
 ```
 supergames/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # SupergamesEnv client
-├── models.py              # Action and Observation models
+├── models.py          # Pydantic domain models
+├── simulator.py       # Revenue and churn simulation
+├── tasks.py           # Task generators and graders
+├── inference.py       # Baseline LLM agent
+├── openenv.yaml       # OpenEnv manifest
+├── pyproject.toml     # Project metadata
 └── server/
-    ├── __init__.py        # Server module exports
-    ├── supergames_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
+    ├── app.py         # FastAPI server
+    ├── environment.py # OpenEnv environment class
+    └── Dockerfile     # Container definition
 ```
