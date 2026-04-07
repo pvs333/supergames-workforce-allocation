@@ -154,7 +154,6 @@ def runTask(taskId: int, seed: int = 42) -> float:
         print(f"\n{'='*40}")
         print(f"TASK {taskId} | STEP {obs.currentStep + 1}/{obs.totalSteps}")
         print(f"{'='*40}")
-        print(f"--- OBSERVATION ---\n{prompt}")
         
         try:
             response = client.chat.completions.create(
@@ -167,15 +166,14 @@ def runTask(taskId: int, seed: int = 42) -> float:
                 max_tokens=MAX_TOKENS,
             )
             raw = response.choices[0].message.content or ""
-            print(f"\n--- LLM RESPONSE ---\n{raw}")
+            #print(f"\n--- LLM RESPONSE ---\n{raw}")
         except Exception as e:
             print(f"  LLM error: {e}")
             raw = '{"assignments": []}'
 
         action = parseAction(raw)
-        print(f"\n--- PARSED ACTION ---\n{action}")
         obs = env.step(action)
-        print(f"  Step {obs.currentStep}/{obs.totalSteps} | reward: {obs.reward:.4f}")
+        print(f"reward: {obs.reward:.4f}")
         time.sleep(1)
 
     return obs.reward or 0.0
