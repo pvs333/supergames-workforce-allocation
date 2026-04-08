@@ -147,36 +147,39 @@ def parseAction(response: str) -> SupergamesAction:
 def runTask(taskId: int, seed: int = 42) -> float:
     env = SupergamesEnvironment()
     obs = env.reset(task_id=taskId, seed=seed)
-    print(f"\nTask {taskId} | {obs.goal[:80]}...")
-
+    
+    taskName = f"task_{taskId}"
+    print(f"[START] task={taskName}", flush=True)
+    
+    stepCount = 0
     while not obs.done:
         prompt = buildPrompt(obs)
-        print(f"\n{'='*40}")
-        print(f"TASK {taskId} | STEP {obs.currentStep + 1}/{obs.totalSteps}")
-        print(f"{'='*40}")
         
         try:
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": prompt},
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS,
             )
             raw = response.choices[0].message.content or ""
-            #print(f"\n--- LLM RESPONSE ---\n{raw}")
         except Exception as e:
-            print(f"  LLM error: {e}")
+            print(f"  LLM error: {e}", flush=True)
             raw = '{"assignments": []}'
 
         action = parseAction(raw)
         obs = env.step(action)
-        print(f"reward: {obs.reward:.4f}")
+        stepCount += 1
+        
+        print(f"[STEP] step={stepCount} reward={obs.reward}", flush=True)
         time.sleep(1)
 
-    return obs.reward or 0.0
+    finalScore = obs.reward or 0.0
+    print(f"[END] task={taskName} score={finalScore} steps={stepCount}", flush=True)
+    return finalScore
 
 
 def main():
