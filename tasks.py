@@ -8,6 +8,14 @@ import random
 
 DAYS_PER_SPRINT = 10  # each staff member contributes 10 days per sprint
 
+# Keep all grader outputs in the open interval (0, 1).
+MIN_SCORE = 0.0001
+MAX_SCORE = 0.9999
+
+
+def _normalize_score(raw_score: float) -> float:
+    return min(MAX_SCORE, max(MIN_SCORE, round(raw_score, 4)))
+
 def task1Generate(seed: int = 42):
     
     games = [
@@ -419,20 +427,20 @@ def task1Grade(
 ) -> float:
     optimal = optimalRevenueSingleSprint(workQueue, staffPool)
     if optimal <= 0:
-        return 1.0
-    return round(min(1.0, max(0.0, agentImpact / optimal)), 4)
+        return MAX_SCORE
+    return _normalize_score(agentImpact / optimal)
 
 
 def task2Grade(agentTotalTevenue: float, optimalRevenue: float) -> float:
     if optimalRevenue <= 0:
-        return 1.0
-    return round(min(1.0, max(0.0, agentTotalTevenue / optimalRevenue)), 4)
+        return MAX_SCORE
+    return _normalize_score(agentTotalTevenue / optimalRevenue)
 
 
 def task3Grade(agentTotalRevenue: float, optimalRevenue: float) -> float:
     if optimalRevenue <= 0:
-        return 1.0
-    return round(min(1.0, max(0.0, agentTotalRevenue / optimalRevenue)), 4)
+        return MAX_SCORE
+    return _normalize_score(agentTotalRevenue / optimalRevenue)
 
 
 def task4Grade(
@@ -441,12 +449,12 @@ def task4Grade(
     crisisResolved: bool,
 ) -> float:
     if optimalRevenue <= 0:
-        return 1.0
-    baseScore = min(1.0, max(0.0, agentTotalRevenue / optimalRevenue))
+        return MAX_SCORE
+    baseScore = agentTotalRevenue / optimalRevenue
     # hard penalty if crisis was never resolved
     if not crisisResolved:
         baseScore *= 0.25
-    return round(baseScore, 4)
+    return _normalize_score(baseScore)
 
 
 # final tasks list
